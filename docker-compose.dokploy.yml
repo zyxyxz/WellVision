@@ -14,18 +14,6 @@ services:
       timeout: 5s
       retries: 20
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   minio:
     image: quay.io/minio/minio:latest
     restart: unless-stopped
@@ -53,9 +41,6 @@ services:
       S3_ENDPOINT_URL: http://minio:9000
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
       CORS_ALLOW_ORIGINS: https://wellvision.apps.aisp24.com
       FRONTEND_ORIGIN: https://wellvision.apps.aisp24.com
       BOOTSTRAP_TENANT_NAME: ${BOOTSTRAP_TENANT_NAME:-Default Tenant}
@@ -65,11 +50,9 @@ services:
       HTTP_PROXY: ""
       HTTPS_PROXY: ""
       ALL_PROXY: ""
-      NO_PROXY: localhost,127.0.0.1,::1,postgres,redis,minio,backend,web
+      NO_PROXY: localhost,127.0.0.1,::1,postgres,minio,backend,web
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       minio:
         condition: service_started
@@ -90,5 +73,4 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   minio_data:

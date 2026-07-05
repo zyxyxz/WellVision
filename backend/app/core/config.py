@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     feature_prefix: str = Field(default="feature/", alias="FEATURE_PREFIX")
     serve_prefix: str = Field(default="serve/", alias="SERVE_PREFIX")
 
-    redis_url: str = Field(alias="REDIS_URL")
+    redis_url: Optional[str] = Field(default=None, alias="REDIS_URL")
     celery_broker_url: Optional[str] = Field(default=None, alias="CELERY_BROKER_URL")
     celery_result_backend: Optional[str] = Field(
         default=None, alias="CELERY_RESULT_BACKEND"
