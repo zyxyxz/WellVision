@@ -6,6 +6,7 @@ from typing import BinaryIO
 
 import boto3
 from botocore.client import BaseClient
+from botocore.exceptions import ClientError
 
 from app.core.config import Settings, get_settings
 
@@ -55,6 +56,21 @@ def build_s3_client() -> BaseClient:
     )
 
 
+def ensure_bucket_exists(client: BaseClient, cfg: ObjectStoreConfig) -> None:
+    try:
+        client.head_bucket(Bucket=cfg.bucket)
+        return
+    except ClientError as exc:
+        error_code = str(exc.response.get("Error", {}).get("Code", ""))
+        if error_code not in {"404", "NoSuchBucket", "NotFound"}:
+            raise
+
+    params: dict[str, object] = {"Bucket": cfg.bucket}
+    if cfg.region and cfg.region != "us-east-1" and not cfg.endpoint_url:
+        params["CreateBucketConfiguration"] = {"LocationConstraint": cfg.region}
+    client.create_bucket(**params)
+
+
 def tenant_key(tenant_id: uuid.UUID | str, prefix: str, filename: str) -> str:
     tenant_str = str(tenant_id)
     safe_prefix = prefix if prefix.endswith("/") else f"{prefix}/"
@@ -72,6 +88,7 @@ def upload_bytesio(
     settings = get_settings()
     cfg = _resolve_object_store_config(settings)
     client = build_s3_client()
+    ensure_bucket_exists(client, cfg)
     key = tenant_key(tenant_id, prefix, filename)
 
     extra_args = {"ContentType": content_type} if content_type else None
@@ -89,6 +106,7 @@ def create_multipart_upload(
     settings = get_settings()
     cfg = _resolve_object_store_config(settings)
     client = build_s3_client()
+    ensure_bucket_exists(client, cfg)
     key = tenant_key(tenant_id, prefix, filename)
 
     params: dict[str, object] = {
