@@ -10,7 +10,6 @@ import {
   Select,
   Space,
   Table,
-  Typography,
   message
 } from "antd";
 import { useTranslation } from "react-i18next";
@@ -19,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { createWarehouse, listWarehouses, updateWarehouse, type DataWarehouseResponse } from "../api/warehouses";
 import { listProjects, type ProjectResponse } from "../api/projects";
 import { useAuth } from "../auth/AuthProvider";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 type WarehouseFormValues = {
   name: string;
@@ -117,20 +117,20 @@ export function DataPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space align="center" style={{ width: "100%", justifyContent: "space-between" }} wrap>
-        <Space direction="vertical" size={0}>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {t("data.warehouseListTitle")}
-          </Typography.Title>
-          <Typography.Text type="secondary">{t("data.warehouseSubtitle")}</Typography.Text>
-        </Space>
+    <PageShell>
+      <PageHeader
+        title={t("data.warehouseListTitle")}
+        subtitle={t("data.warehouseSubtitle")}
+        extra={
+          <PageActions>
         <Button type="primary" onClick={openCreate}>
           {t("data.warehouseCreateAction")}
         </Button>
-      </Space>
+          </PageActions>
+        }
+      />
 
-      <Card>
+      <Card className="wv-table-card">
         {warehouses.length ? (
           <Table<DataWarehouseResponse>
             rowKey="id"
@@ -182,7 +182,11 @@ export function DataPage() {
             ]}
           />
         ) : (
-          <Empty description={t("data.warehouseEmpty")} />
+          <Empty description={t("data.warehouseEmpty")}>
+            <Button className="wv-empty-action" type="primary" onClick={openCreate}>
+              {t("data.warehouseCreateAction")}
+            </Button>
+          </Empty>
         )}
       </Card>
 
@@ -211,6 +215,6 @@ export function DataPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </PageShell>
   );
 }

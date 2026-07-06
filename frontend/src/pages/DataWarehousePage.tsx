@@ -23,6 +23,7 @@ import {
 import type { UploadProps } from "antd";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 import { listFields, type FieldSummary } from "../api/analysis";
 import {
@@ -510,16 +511,17 @@ export function DataWarehousePage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space wrap align="center" style={{ width: "100%", justifyContent: "space-between" }}>
-        <Space>
+    <PageShell>
+      <PageHeader
+        title={warehouse?.name || t("data.warehouseDetailTitle")}
+        subtitle={warehouse?.description || t("data.warehouseSubtitle")}
+        extra={
+          <PageActions>
           <Button onClick={() => navigate("/data")}>{t("data.backToList")}</Button>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {warehouse?.name || t("data.warehouseDetailTitle")}
-          </Typography.Title>
-        </Space>
         {warehouse ? <Tag color="blue">{warehouse.name}</Tag> : null}
-      </Space>
+          </PageActions>
+        }
+      />
 
       <Card loading={loadingWarehouse}>
         {warehouse ? (
@@ -573,6 +575,7 @@ export function DataWarehousePage() {
                   <Progress percent={uploadProgress} size="small" />
                 ) : null}
                 <Divider style={{ marginBlock: 8 }} />
+                <div className="wv-table-card">
                 <Table<DatasetResponse>
                   rowKey="id"
                   dataSource={datasets}
@@ -615,7 +618,8 @@ export function DataWarehousePage() {
                     }
                   ]}
                 />
-                <Card title={t("data.importJobsTitle")} loading={loadingImports}>
+                </div>
+                <Card className="wv-table-card" title={t("data.importJobsTitle")} loading={loadingImports}>
                   <Table<ImportJob>
                     rowKey="id"
                     dataSource={importJobs}
@@ -746,7 +750,7 @@ export function DataWarehousePage() {
                   </Form>
                 </Card>
 
-                <Card title={t("data.eventsTitle")} loading={loadingEvents}>
+                <Card className="wv-table-card" title={t("data.eventsTitle")} loading={loadingEvents}>
                   <Table<EventResponse>
                     rowKey="id"
                     dataSource={events}
@@ -822,7 +826,7 @@ export function DataWarehousePage() {
                     </Button>
                   </Form>
                 </Card>
-                <Card title={t("data.sourcesTitle")} loading={loadingSources}>
+                <Card className="wv-table-card" title={t("data.sourcesTitle")} loading={loadingSources}>
                   <Table<DataSourceResponse>
                     rowKey="id"
                     dataSource={sources}
@@ -964,6 +968,6 @@ export function DataWarehousePage() {
           </Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </PageShell>
   );
 }

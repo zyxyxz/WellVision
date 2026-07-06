@@ -8,7 +8,6 @@ import {
   Table,
   Tabs,
   Tag,
-  Typography,
   message
 } from "antd";
 import { useTranslation } from "react-i18next";
@@ -17,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { listAlgorithms, type AlgorithmInfo } from "../api/analysis";
 import { deleteAlgorithmDefinition, listAlgorithmDefinitions, updateAlgorithmDefinition, type AlgorithmDefinition } from "../api/algorithms";
 import { useAuth } from "../auth/AuthProvider";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 export function AlgorithmsPage() {
   const { me } = useAuth();
@@ -72,18 +72,18 @@ export function AlgorithmsPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space align="center" style={{ width: "100%", justifyContent: "space-between" }} wrap>
-        <Space direction="vertical" size={0}>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {t("algorithms.title")}
-          </Typography.Title>
-          <Typography.Text type="secondary">{t("algorithms.subtitle")}</Typography.Text>
-        </Space>
+    <PageShell>
+      <PageHeader
+        title={t("algorithms.title")}
+        subtitle={t("algorithms.subtitle")}
+        extra={
+          <PageActions>
         <Button type="primary" onClick={() => navigate("/algorithms/new")} disabled={!canEdit}>
           {t("algorithms.create")}
         </Button>
-      </Space>
+          </PageActions>
+        }
+      />
 
       <Tabs
         items={[
@@ -91,7 +91,7 @@ export function AlgorithmsPage() {
             key: "builtin",
             label: t("algorithms.builtin"),
             children: (
-              <Card loading={loading}>
+              <Card className="wv-table-card" loading={loading}>
                 <Table<AlgorithmInfo>
                   rowKey="id"
                   dataSource={builtin}
@@ -119,7 +119,7 @@ export function AlgorithmsPage() {
             key: "custom",
             label: t("algorithms.custom"),
             children: (
-              <Card loading={loading}>
+              <Card className="wv-table-card" loading={loading}>
                 <Table<AlgorithmDefinition>
                   rowKey="id"
                   dataSource={custom}
@@ -165,6 +165,6 @@ export function AlgorithmsPage() {
         ]}
       />
 
-    </Space>
+    </PageShell>
   );
 }

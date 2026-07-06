@@ -11,7 +11,6 @@ import {
   Statistic,
   Table,
   Tag,
-  Typography
 } from "antd";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -23,6 +22,7 @@ import { listEvents, type EventResponse } from "../api/events";
 import { listReports, type ReportResponse, type ReportStatus } from "../api/reports";
 import { listWarehouses, type DataWarehouseResponse } from "../api/warehouses";
 import { useAuth } from "../auth/AuthProvider";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 const STATUS_COLORS: Record<ReportStatus, string> = {
   draft: "default",
@@ -127,17 +127,12 @@ export function DashboardPage() {
   const events24h = events.filter((event) => now - new Date(event.created_at).getTime() < 24 * 3600 * 1000).length;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space align="center" style={{ width: "100%", justifyContent: "space-between" }} wrap>
-        <Space direction="vertical" size={0}>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {t("dashboard.title")}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {t("dashboard.tenantContext")}: {me?.tenant_id ?? "-"}
-          </Typography.Text>
-        </Space>
-        <Space wrap>
+    <PageShell>
+      <PageHeader
+        title={t("dashboard.title")}
+        subtitle={`${t("dashboard.tenantContext")}: ${me?.tenant_id ?? "-"}`}
+        extra={
+          <PageActions>
           <Select
             style={{ minWidth: 240 }}
             value={warehouseId ?? "all"}
@@ -148,8 +143,9 @@ export function DashboardPage() {
             onChange={(value) => setWarehouseId(value === "all" ? null : value)}
           />
           <Button onClick={() => loadWarehouseScoped()}>{t("dashboard.refresh")}</Button>
-        </Space>
-      </Space>
+          </PageActions>
+        }
+      />
 
       <Row gutter={[16, 16]}>
         <Col xs={24} md={6}>
@@ -223,7 +219,7 @@ export function DashboardPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title={t("dashboard.recentDatasets")} loading={loading}>
+          <Card className="wv-table-card" title={t("dashboard.recentDatasets")} loading={loading}>
             {datasets.length ? (
               <Table<DatasetResponse>
                 rowKey="id"
@@ -250,7 +246,7 @@ export function DashboardPage() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title={t("dashboard.recentReports")} loading={loading}>
+          <Card className="wv-table-card" title={t("dashboard.recentReports")} loading={loading}>
             {reports.length ? (
               <Table<ReportResponse>
                 rowKey="id"
@@ -276,6 +272,6 @@ export function DashboardPage() {
           </Card>
         </Col>
       </Row>
-    </Space>
+    </PageShell>
   );
 }

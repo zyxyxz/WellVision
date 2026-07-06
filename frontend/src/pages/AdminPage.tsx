@@ -33,6 +33,7 @@ import type { AdminChatMessage, AdminChatSession, TenantResponse, UserResponse }
 import { getSystemSetting, upsertSystemSetting } from "../api/systemSettings";
 import { useAuth } from "../auth/AuthProvider";
 import { CodeEditor } from "../components/CodeEditor";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 const ROLE_OPTIONS = [
   { label: "tenant_admin", value: "tenant_admin" },
@@ -251,28 +252,22 @@ export function AdminPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Row justify="space-between" align="middle">
-        <Col>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {t("admin.title")}
-          </Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t("admin.subtitle")}
-          </Typography.Paragraph>
-        </Col>
-        <Col>
-          <Space>
+    <PageShell>
+      <PageHeader
+        title={t("admin.title")}
+        subtitle={t("admin.subtitle")}
+        extra={
+          <PageActions>
             <Button onClick={() => setTenantModalOpen(true)}>{t("admin.createTenant")}</Button>
             <Button onClick={() => setUserModalOpen(true)}>{t("admin.createUser")}</Button>
             <Button type="primary" onClick={() => setMembershipModalOpen(true)}>
               {t("admin.assignMembership")}
             </Button>
-          </Space>
-        </Col>
-      </Row>
+          </PageActions>
+        }
+      />
 
-      <Card title={t("admin.tenantsTitle")} loading={loading}>
+      <Card className="wv-table-card" title={t("admin.tenantsTitle")} loading={loading}>
         <Table<TenantResponse>
           rowKey="id"
           dataSource={tenants}
@@ -289,7 +284,7 @@ export function AdminPage() {
         />
       </Card>
 
-      <Card title={t("admin.usersTitle")} loading={loading}>
+      <Card className="wv-table-card" title={t("admin.usersTitle")} loading={loading}>
         <Table<UserResponse>
           rowKey="id"
           dataSource={users}
@@ -383,6 +378,7 @@ export function AdminPage() {
       </Card>
 
       <Card
+        className="wv-table-card"
         title={t("admin.chatHistoryTitle")}
         extra={
           <Button size="small" onClick={loadChatSessions} loading={chatLoading}>
@@ -534,6 +530,6 @@ export function AdminPage() {
       <Typography.Paragraph type="secondary">
         {t("admin.tip")}
       </Typography.Paragraph>
-    </Space>
+    </PageShell>
   );
 }

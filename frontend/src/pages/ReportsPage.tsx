@@ -27,6 +27,7 @@ import {
 } from "../api/reports";
 import { getApiErrorMessage } from "../api/errors";
 import { useAuth } from "../auth/AuthProvider";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 type ReportFormValues = {
   title: string;
@@ -177,15 +178,10 @@ export function ReportsPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        {t("reports.title")}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-        {t("reports.subtitle")}
-      </Typography.Paragraph>
+    <PageShell>
+      <PageHeader title={t("reports.title")} subtitle={t("reports.subtitle")} />
 
-      <Card size="small">
+      <Card className="wv-toolbar-card" size="small">
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <Segmented
             value={statusFilter}
@@ -203,13 +199,15 @@ export function ReportsPage() {
             ]}
           />
 
-          <Button type="primary" onClick={openCreate} disabled={!canEdit}>
-            {t("reports.newDraft")}
-          </Button>
+          <PageActions>
+            <Button type="primary" onClick={openCreate} disabled={!canEdit}>
+              {t("reports.newDraft")}
+            </Button>
+          </PageActions>
         </Space>
       </Card>
 
-      <Card title={t("reports.list")} loading={loading}>
+      <Card className="wv-table-card" title={t("reports.list")} loading={loading}>
         <Table<ReportResponse>
           rowKey="id"
           dataSource={reports}
@@ -295,6 +293,6 @@ export function ReportsPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </PageShell>
   );
 }

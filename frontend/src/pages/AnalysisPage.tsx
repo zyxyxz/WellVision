@@ -54,6 +54,7 @@ import {
   type SeriesQuery,
   type SeriesResponse
 } from "../api/analysis";
+import { PageHeader, PageShell } from "../components/PageShell";
 import { listWarehouses, type DataWarehouseResponse } from "../api/warehouses";
 import { createReportFromRun } from "../api/reports";
 import { useAuth } from "../auth/AuthProvider";
@@ -798,15 +799,10 @@ export function AnalysisPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        {t("analysis.title")}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-        {t("analysis.subtitle")}
-      </Typography.Paragraph>
+    <PageShell>
+      <PageHeader title={t("analysis.title")} subtitle={t("analysis.subtitle")} />
 
-      <Card size="small">
+      <Card className="wv-toolbar-card" size="small">
         <Space wrap align="center" size={[16, 8]}>
           <Space align="center">
             <Typography.Text>{t("analysis.warehouseFilter")}</Typography.Text>
@@ -1023,7 +1019,7 @@ export function AnalysisPage() {
       </Card>
 
       {segments.length ? (
-        <Card size="small" title={t("analysis.segmentFolder")}>
+        <Card className="wv-table-card" size="small" title={t("analysis.segmentFolder")}>
           <Table<SavedSegment>
             rowKey="id"
             dataSource={segments}
@@ -1242,6 +1238,7 @@ export function AnalysisPage() {
             label: t("analysis.runHistory"),
             children: (
               <Card
+                className="wv-table-card"
                 size="small"
                 title={t("analysis.recentRuns")}
                 extra={<Button onClick={() => loadRuns()}>{t("analysis.refresh")}</Button>}
@@ -1478,6 +1475,6 @@ export function AnalysisPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </PageShell>
   );
 }

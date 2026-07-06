@@ -1,5 +1,5 @@
 import React from "react";
-import { Layout, Menu, Typography, Button, Space, Tag, Select, message } from "antd";
+import { Layout, Menu, Typography, Button, Space, Tag, Select, message, FloatButton } from "antd";
 import type { MenuProps } from "antd";
 import {
   DashboardOutlined,
@@ -24,6 +24,7 @@ export function AppLayout() {
   const location = useLocation();
   const { me, logout, switchTenant } = useAuth();
   const { t } = useTranslation();
+  const contentRef = React.useRef<HTMLDivElement>(null);
 
   const menuItems: MenuProps["items"] = [
     {
@@ -90,28 +91,22 @@ export function AppLayout() {
   })();
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
-      <Sider breakpoint="lg" collapsedWidth="0">
-        <div style={{ height: 56, padding: 16, color: "white", fontWeight: 600 }}>WellVision</div>
-        <Menu theme="dark" mode="inline" selectedKeys={[selectedKey]} items={menuItems} />
+    <Layout className="wv-app-layout">
+      <Sider className="wv-sider" breakpoint="lg" collapsedWidth="0" width={220}>
+        <div className="wv-brand">WellVision</div>
+        <Menu className="wv-nav-menu" theme="dark" mode="inline" selectedKeys={[selectedKey]} items={menuItems} />
       </Sider>
-      <Layout>
-        <Header
-          style={{
-            background: "#fff",
-            paddingInline: 24,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between"
-          }}
-        >
-          <Space>
-            <Typography.Text strong>{me?.user.email}</Typography.Text>
+      <Layout className="wv-main-layout">
+        <Header className="wv-header">
+          <Space className="wv-header-left" wrap>
+            <Typography.Text strong ellipsis>
+              {me?.user.email}
+            </Typography.Text>
             {me?.tenant_id ? <Tag color="blue">{t("layout.tenantTag")}: {me.tenant_id.slice(0, 8)}</Tag> : null}
             {me?.context?.tenants?.length ? (
               <Select
                 size="small"
-                style={{ minWidth: 220 }}
+                style={{ minWidth: 220, maxWidth: "100%" }}
                 value={me.tenant_id ?? undefined}
                 options={me.context.tenants.map((t) => ({
                   value: t.tenant_id,
@@ -143,10 +138,13 @@ export function AppLayout() {
               <Tag key={role}>{role}</Tag>
             ))}
           </Space>
-          <Button onClick={logout}>{t("nav.logout")}</Button>
+          <div className="wv-header-right">
+            <Button onClick={logout}>{t("nav.logout")}</Button>
+          </div>
         </Header>
-        <Content style={{ margin: 24 }}>
+        <Content ref={contentRef} className="wv-content">
           <Outlet />
+          <FloatButton.BackTop target={() => contentRef.current ?? window} />
         </Content>
       </Layout>
     </Layout>

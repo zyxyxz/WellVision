@@ -10,13 +10,13 @@ import {
   Space,
   Table,
   Tag,
-  Typography,
   message
 } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { createProject, deleteProject, listProjects, updateProject, type ProjectResponse } from "../api/projects";
 import { useAuth } from "../auth/AuthProvider";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 const STATUS_OPTIONS = [
   { value: "active", label: "active" },
@@ -132,20 +132,20 @@ export function ProjectsPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space align="center" style={{ width: "100%", justifyContent: "space-between" }} wrap>
-        <Space direction="vertical" size={0}>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {t("projects.title")}
-          </Typography.Title>
-          <Typography.Text type="secondary">{t("projects.subtitle")}</Typography.Text>
-        </Space>
+    <PageShell>
+      <PageHeader
+        title={t("projects.title")}
+        subtitle={t("projects.subtitle")}
+        extra={
+          <PageActions>
         <Button type="primary" onClick={openCreate}>
           {t("projects.create")}
         </Button>
-      </Space>
+          </PageActions>
+        }
+      />
 
-      <Card>
+      <Card className="wv-table-card">
         <Table<ProjectResponse>
           rowKey="id"
           dataSource={projects}
@@ -216,6 +216,6 @@ export function ProjectsPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </PageShell>
   );
 }

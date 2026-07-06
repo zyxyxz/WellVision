@@ -24,6 +24,7 @@ import {
   type AlgorithmDefinition
 } from "../api/algorithms";
 import { useAuth } from "../auth/AuthProvider";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 type AlgorithmKind = "python" | "http" | "workflow";
 
@@ -266,21 +267,19 @@ export function AlgorithmEditorPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space align="center" style={{ width: "100%", justifyContent: "space-between" }} wrap>
-        <Space direction="vertical" size={0}>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {editing ? t("algorithms.editorTitleEdit") : t("algorithms.editorTitleCreate")}
-          </Typography.Title>
-          <Typography.Text type="secondary">{t("algorithms.subtitle")}</Typography.Text>
-        </Space>
-        <Space wrap>
+    <PageShell>
+      <PageHeader
+        title={editing ? t("algorithms.editorTitleEdit") : t("algorithms.editorTitleCreate")}
+        subtitle={t("algorithms.subtitle")}
+        extra={
+          <PageActions>
           <Button onClick={() => navigate("/algorithms")}>{t("algorithms.backToList")}</Button>
           <Button type="primary" onClick={handleSave} loading={saving} disabled={!canEdit}>
             {t("common.save")}
           </Button>
-        </Space>
-      </Space>
+          </PageActions>
+        }
+      />
 
       <Card loading={loading}>
         <Form
@@ -391,6 +390,6 @@ export function AlgorithmEditorPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </PageShell>
   );
 }

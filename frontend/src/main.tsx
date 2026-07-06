@@ -6,6 +6,7 @@ import { ConfigProvider } from "antd";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import "./i18n";
+import "./styles.css";
 
 import "antd/dist/reset.css";
 

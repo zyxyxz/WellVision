@@ -50,6 +50,7 @@ import {
   type WellRunResponse,
   type WellRunSegmentResponse
 } from "../api/wellRuns";
+import { PageHeader, PageShell } from "../components/PageShell";
 import { listWarehouses, type DataWarehouseResponse } from "../api/warehouses";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -1465,15 +1466,10 @@ export function DrillReplayPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space direction="vertical" size={0}>
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          {t("replay.title")}
-        </Typography.Title>
-        <Typography.Text type="secondary">{t("replay.subtitle")}</Typography.Text>
-      </Space>
+    <PageShell>
+      <PageHeader title={t("replay.title")} subtitle={t("replay.subtitle")} />
 
-      <Card>
+      <Card className="wv-toolbar-card">
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={7}>
             <Space direction="vertical" style={{ width: "100%" }} size={6}>
@@ -1966,6 +1962,6 @@ export function DrillReplayPage() {
           </Card>
         </Col>
       </Row>
-    </Space>
+    </PageShell>
   );
 }

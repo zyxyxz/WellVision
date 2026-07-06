@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { approveReport, listReports, rejectReport, type ReportResponse } from "../api/reports";
 import { getApiErrorMessage } from "../api/errors";
 import { useAuth } from "../auth/AuthProvider";
+import { PageActions, PageHeader, PageShell } from "../components/PageShell";
 
 export function ReviewPage() {
   const { me } = useAuth();
@@ -100,29 +101,27 @@ export function ReviewPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space style={{ width: "100%", justifyContent: "space-between" }} align="start" wrap>
-        <div>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {t("review.title")}
-          </Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-            {t("review.subtitle")}
-          </Typography.Paragraph>
-        </div>
+    <PageShell>
+      <PageHeader
+        title={t("review.title")}
+        subtitle={t("review.subtitle")}
+        extra={
+          <PageActions>
         <Button onClick={load} loading={loading}>
           {t("review.refresh")}
         </Button>
-      </Space>
+          </PageActions>
+        }
+      />
 
-      <Card size="small">
+      <Card className="wv-toolbar-card" size="small">
         <Space>
           <Typography.Text strong>{t("review.pending")}</Typography.Text>
           <Tag color={pendingCount ? "processing" : "success"}>{pendingCount}</Tag>
         </Space>
       </Card>
 
-      <Card title={t("review.queue")} loading={loading}>
+      <Card className="wv-table-card" title={t("review.queue")} loading={loading}>
         <Table<ReportResponse>
           rowKey="id"
           dataSource={reports}
@@ -181,22 +180,10 @@ export function ReviewPage() {
         <Typography.Paragraph type="secondary">
           {activeReport ? new Date(activeReport.updated_at).toLocaleString() : ""}
         </Typography.Paragraph>
-        <pre
-          style={{
-            margin: 0,
-            padding: 16,
-            maxHeight: "60vh",
-            overflow: "auto",
-            background: "#f6f8fa",
-            border: "1px solid #e5e7eb",
-            borderRadius: 6,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word"
-          }}
-        >
+        <pre className="wv-code-panel">
           {activeReport?.content_markdown || ""}
         </pre>
       </Modal>
-    </Space>
+    </PageShell>
   );
 }
