@@ -3,14 +3,17 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.models import Membership, ReportTemplate, Tenant, TenantRole, User
+from app.models import EventMetric, Membership, ReportTemplate, Tenant, TenantRole, User, WellRun
 
 settings = get_settings()
+
+REPLAY_DEMO_WAREHOUSE = "Replay Digital Twin Warehouse"
+REPLAY_DEMO_RUN_PREFIX = "Replay Digital Twin Demo"
 
 
 def _slugify(value: str) -> str:
@@ -22,6 +25,58 @@ def _slugify(value: str) -> str:
 
 def _ensure_roles(role: str | None, default: str) -> str:
     return role or default
+
+
+def _has_replay_demo_data(db: Session, tenant_id) -> bool:
+    expected_names = {
+        f"{REPLAY_DEMO_RUN_PREFIX} - Normal Twin",
+        f"{REPLAY_DEMO_RUN_PREFIX} - Anomaly Twin",
+    }
+    run_rows = (
+        db.execute(
+            select(WellRun.id, WellRun.name)
+            .where(WellRun.tenant_id == tenant_id, WellRun.name.in_(expected_names))
+        )
+        .all()
+    )
+    if {row.name for row in run_rows} != expected_names:
+        return False
+
+    run_ids = [row.id for row in run_rows]
+    metric_count = db.execute(
+        select(func.count())
+        .select_from(EventMetric)
+        .where(EventMetric.tenant_id == tenant_id, EventMetric.well_run_id.in_(run_ids))
+    ).scalar_one()
+    return metric_count >= 1000
+
+
+def _bootstrap_replay_demo_data(db: Session, tenant: Tenant) -> None:
+    if not settings.bootstrap_replay_demo_data:
+        return
+    if _has_replay_demo_data(db, tenant.id):
+        return
+
+    from scripts.generate_replay_mock_data import generate_mock_data
+
+    generate_mock_data(
+        tenant_id_text=str(tenant.id),
+        warehouse_name=REPLAY_DEMO_WAREHOUSE,
+        well_run_name=REPLAY_DEMO_RUN_PREFIX,
+        duration_minutes=120,
+        step_seconds=2,
+        seed=20260706,
+        scenario="all",
+        replace=True,
+    )
+
+
+def _bootstrap_replay_demo_data_for_tenants(db: Session) -> None:
+    if not settings.bootstrap_replay_demo_data:
+        return
+    tenants = db.execute(select(Tenant).order_by(Tenant.created_at.asc())).scalars().all()
+    for tenant in tenants:
+        _bootstrap_replay_demo_data(db, tenant)
 
 
 def bootstrap_defaults(db: Session) -> None:
@@ -111,6 +166,7 @@ def bootstrap_defaults(db: Session) -> None:
         )
 
     db.commit()
+    _bootstrap_replay_demo_data_for_tenants(db)
 
 
 def user_roles(memberships: Iterable[Membership]) -> list[str]:

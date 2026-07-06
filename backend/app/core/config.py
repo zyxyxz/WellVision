@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str = Field(
         default="ChangeMe123!", alias="BOOTSTRAP_ADMIN_PASSWORD"
     )
+    bootstrap_replay_demo_data: bool = Field(default=True, alias="BOOTSTRAP_REPLAY_DEMO_DATA")
 
     max_upload_mb: int = Field(default=2048, alias="MAX_UPLOAD_MB")
     multipart_part_size_mb: int = Field(default=16, alias="MULTIPART_PART_SIZE_MB")
