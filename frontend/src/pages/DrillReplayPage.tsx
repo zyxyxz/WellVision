@@ -1,13 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Badge,
   Button,
   Card,
   Col,
+  Descriptions,
   Empty,
   InputNumber,
+  List,
   Progress,
   Row,
+  Segmented,
   Select,
   Slider,
   Space,
@@ -78,6 +82,40 @@ type SegmentInterval = {
   color: string;
   start: number;
   end: number;
+};
+
+type SceneMode = "twin3d" | "schematic";
+
+type SimulationEvent = {
+  id: string;
+  type: string;
+  title: string;
+  severity: "info" | "warning" | "critical";
+  startTs: string | null;
+  endTs: string | null;
+  mdStart: number | null;
+  mdEnd: number | null;
+  description: string;
+  recommendation: string;
+  confidence: number | null;
+};
+
+type TwinProfile = {
+  rig: string;
+  wellProfile: string;
+  bit: Record<string, string>;
+  bha: Record<string, string | number>;
+  mud: Record<string, string | number>;
+  operatingWindow: {
+    wobMin: number;
+    wobMax: number;
+    rpmMin: number;
+    rpmMax: number;
+    pressureMin: number;
+    pressureMax: number;
+    vibrationMax: number;
+    torqueMax: number;
+  };
 };
 
 const METRIC_UNITS: Record<MetricKey, string> = {
@@ -151,6 +189,125 @@ function toNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function toText(value: unknown, fallback = "") {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
+}
+
+function toTextRecord(value: unknown): Record<string, string | number> {
+  const record = asRecord(value);
+  if (!record) return {};
+  return Object.entries(record).reduce<Record<string, string | number>>((acc, [key, item]) => {
+    if (typeof item === "string" || typeof item === "number") {
+      acc[key] = item;
+    }
+    return acc;
+  }, {});
+}
+
+function parseTwinProfile(details: Record<string, unknown> | undefined): TwinProfile {
+  const root = asRecord(details?.digital_twin);
+  const window = asRecord(root?.operating_window);
+  return {
+    rig: toText(root?.rig, "WV-260 AC automated drilling package"),
+    wellProfile: toText(root?.well_profile, "directional build-and-hold section"),
+    bit: {
+      type: toText(asRecord(root?.bit)?.type, "PDC 12-1/4in"),
+      iadc: toText(asRecord(root?.bit)?.iadc, "M323"),
+      serial: toText(asRecord(root?.bit)?.serial, "WV-DEMO"),
+      nozzles: toText(asRecord(root?.bit)?.nozzles, "6 x 12/32")
+    },
+    bha: toTextRecord(root?.bha),
+    mud: toTextRecord(root?.mud),
+    operatingWindow: {
+      wobMin: toNumber(window?.wob_min) ?? 62,
+      wobMax: toNumber(window?.wob_max) ?? 105,
+      rpmMin: toNumber(window?.rpm_min) ?? 92,
+      rpmMax: toNumber(window?.rpm_max) ?? 148,
+      pressureMin: toNumber(window?.pressure_min) ?? 2600,
+      pressureMax: toNumber(window?.pressure_max) ?? 4300,
+      vibrationMax: toNumber(window?.vibration_max) ?? 7.2,
+      torqueMax: toNumber(window?.torque_max) ?? 32
+    }
+  };
+}
+
+function parseSimulationEvents(details: Record<string, unknown> | undefined): SimulationEvent[] {
+  const rawEvents = details?.simulation_events;
+  if (!Array.isArray(rawEvents)) return [];
+  return rawEvents.reduce<SimulationEvent[]>((acc, item, idx) => {
+    const event = asRecord(item);
+    if (!event) return acc;
+    const severityText = toText(event.severity, "info");
+    const severity: SimulationEvent["severity"] =
+      severityText === "critical" || severityText === "warning" ? severityText : "info";
+    acc.push({
+      id: toText(event.id, `event-${idx}`),
+      type: toText(event.type, "event"),
+      title: toText(event.title, `Event ${idx + 1}`),
+      severity,
+      startTs: toText(event.start_ts) || null,
+      endTs: toText(event.end_ts) || null,
+      mdStart: toNumber(event.md_start),
+      mdEnd: toNumber(event.md_end),
+      description: toText(event.description),
+      recommendation: toText(event.recommendation),
+      confidence: toNumber(event.confidence)
+    });
+    return acc;
+  }, []);
+}
+
+function eventColor(severity: SimulationEvent["severity"]) {
+  if (severity === "critical") return "red";
+  if (severity === "warning") return "orange";
+  return "blue";
+}
+
+function eventAlertType(severity: SimulationEvent["severity"]): "info" | "warning" | "error" {
+  if (severity === "critical") return "error";
+  if (severity === "warning") return "warning";
+  return "info";
+}
+
+function outsideRange(value: number | null, min: number, max: number) {
+  if (typeof value !== "number") return 0;
+  if (value < min) return clamp(((min - value) / Math.max(1, min)) * 100, 0, 100);
+  if (value > max) return clamp(((value - max) / Math.max(1, max)) * 100, 0, 100);
+  return 0;
+}
+
+function computeTwinScores(
+  frame: ReplayFrame | null,
+  profile: TwinProfile,
+  event: SimulationEvent | null,
+  coverage: number
+) {
+  const pressure = frame?.metrics.pressure ?? null;
+  const vibration = frame?.metrics.vibration ?? null;
+  const wob = frame?.metrics.wob ?? null;
+  const rpm = frame?.metrics.rpm ?? null;
+  const torque = frame?.metrics.torque ?? null;
+  const window = profile.operatingWindow;
+
+  const pressurePenalty = outsideRange(pressure, window.pressureMin, window.pressureMax) * 0.36;
+  const wobPenalty = outsideRange(wob, window.wobMin, window.wobMax) * 0.2;
+  const rpmPenalty = outsideRange(rpm, window.rpmMin, window.rpmMax) * 0.2;
+  const vibrationPenalty = typeof vibration === "number" ? clamp((vibration / window.vibrationMax - 1) * 42, 0, 42) : 0;
+  const torquePenalty = typeof torque === "number" ? clamp((torque / window.torqueMax - 1) * 32, 0, 32) : 0;
+  const eventPenalty = event?.severity === "critical" ? 24 : event?.severity === "warning" ? 12 : 0;
+  const coveragePenalty = clamp((1 - coverage) * 20, 0, 20);
+
+  const risk = clamp(pressurePenalty + wobPenalty + rpmPenalty + vibrationPenalty + torquePenalty + eventPenalty + coveragePenalty, 0, 100);
+  return {
+    risk,
+    bitHealth: clamp(100 - vibrationPenalty * 0.8 - torquePenalty * 1.2 - eventPenalty * 0.7, 0, 100),
+    hydraulics: clamp(100 - pressurePenalty * 1.6 - coveragePenalty, 0, 100),
+    stability: clamp(100 - vibrationPenalty * 1.4 - rpmPenalty - eventPenalty, 0, 100)
+  };
 }
 
 function parseSoilLayers(details: Record<string, unknown> | undefined): SoilLayer[] {
@@ -380,6 +537,7 @@ type DrillSceneProps = {
   soilLayers: SoilLayer[];
   playing: boolean;
   labels: { depthLabel: string; azimuthLabel: string; inclinationLabel: string };
+  activeEvent?: SimulationEvent | null;
 };
 
 function DrillSceneCanvas({ frame, depth, depthRange, soilLayers, playing, labels }: DrillSceneProps) {
@@ -474,7 +632,7 @@ function DrillSceneCanvas({ frame, depth, depthRange, soilLayers, playing, label
   );
 }
 
-function DrillSceneVector({ frame, depth, depthRange, soilLayers, playing, labels }: DrillSceneProps) {
+function DrillSceneVector({ frame, depth, depthRange, soilLayers, playing, labels, activeEvent }: DrillSceneProps) {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
@@ -520,6 +678,12 @@ function DrillSceneVector({ frame, depth, depthRange, soilLayers, playing, label
 
   const haloR = 14 + pressureFactor * 22;
   const haloOpacity = 0.07 + pressureFactor * 0.22;
+  const eventFill =
+    activeEvent?.severity === "critical" ? "#fff1f0" : activeEvent?.severity === "warning" ? "#fff7e6" : "#e6f4ff";
+  const eventStroke =
+    activeEvent?.severity === "critical" ? "#ff7875" : activeEvent?.severity === "warning" ? "#ffc069" : "#91caff";
+  const eventText =
+    activeEvent?.severity === "critical" ? "#a8071a" : activeEvent?.severity === "warning" ? "#ad6800" : "#0958d9";
 
   return (
     <div
@@ -614,6 +778,16 @@ function DrillSceneVector({ frame, depth, depthRange, soilLayers, playing, label
         <text x={398} y={40} fill="rgba(30,41,59,0.78)" fontSize={13}>
           {labels.azimuthLabel}: {azimuth.toFixed(1)} deg
         </text>
+
+        {activeEvent ? (
+          <g>
+            <rect x={18} y={432} width={564} height={26} rx={13} fill={eventFill} stroke={eventStroke} />
+            <circle cx={34} cy={445} r={5} fill={eventStroke} />
+            <text x={46} y={450} fill={eventText} fontSize={13} fontWeight={600}>
+              {activeEvent.title}
+            </text>
+          </g>
+        ) : null}
       </svg>
     </div>
   );
@@ -714,10 +888,10 @@ function DrillSceneThree({
         scene.add(lightB);
 
         const pitBase = new THREE.Mesh(
-          new THREE.BoxGeometry(260, 236, 260),
-          new THREE.MeshStandardMaterial({ color: "#d7e2ef", roughness: 0.96, metalness: 0.04 })
+          new THREE.BoxGeometry(260, 6, 260),
+          new THREE.MeshStandardMaterial({ color: "#cfdbea", roughness: 0.96, metalness: 0.04 })
         );
-        pitBase.position.set(0, -78, 0);
+        pitBase.position.set(0, -198, 0);
         scene.add(pitBase);
 
         const boreholeShell = new THREE.Mesh(
@@ -976,7 +1150,21 @@ function DrillSceneThree({
   );
 }
 
-function DrillScene(props: DrillSceneProps) {
+function DrillScene(props: DrillSceneProps & { mode: SceneMode }) {
+  const [fallback, setFallback] = useState(false);
+
+  useEffect(() => {
+    setFallback(false);
+  }, [props.mode]);
+
+  const handleFallback = useCallback(() => {
+    setFallback(true);
+  }, []);
+
+  if (props.mode === "twin3d" && !fallback) {
+    return <DrillSceneThree {...props} onFallback={handleFallback} />;
+  }
+
   return <DrillSceneVector {...props} />;
 }
 
@@ -1004,6 +1192,7 @@ export function DrillReplayPage() {
   const [playing, setPlaying] = useState(false);
   const [playhead, setPlayhead] = useState(0);
   const [speed, setSpeed] = useState(1);
+  const [sceneMode, setSceneMode] = useState<SceneMode>("twin3d");
   const carryRef = useRef(0);
 
   const [channelMap, setChannelMap] = useState<ChannelSelection>({
@@ -1019,6 +1208,16 @@ export function DrillReplayPage() {
   const selectedWellRun = useMemo(
     () => wellRuns.find((run) => run.id === wellRunId) ?? null,
     [wellRuns, wellRunId]
+  );
+
+  const twinProfile = useMemo(
+    () => parseTwinProfile(selectedWellRun?.details),
+    [selectedWellRun]
+  );
+
+  const simulationEvents = useMemo(
+    () => parseSimulationEvents(selectedWellRun?.details),
+    [selectedWellRun]
   );
 
   const channelOptions = useMemo(
@@ -1196,6 +1395,24 @@ export function DrillReplayPage() {
       }));
   }, [segmentTimeline, trendData]);
 
+  const trendEvents = useMemo(() => {
+    if (!trendData.length) return [];
+    const start = trendData[0].tms;
+    const end = trendData[trendData.length - 1].tms;
+    return simulationEvents
+      .map((event) => {
+        const eventStart = event.startTs ? dayjs(event.startTs).valueOf() : null;
+        const eventEnd = event.endTs ? dayjs(event.endTs).valueOf() : null;
+        if (!eventStart || !eventEnd || eventEnd < start || eventStart > end) return null;
+        return {
+          ...event,
+          x1: Math.max(start, eventStart),
+          x2: Math.min(end, eventEnd)
+        };
+      })
+      .filter((event): event is SimulationEvent & { x1: number; x2: number } => Boolean(event));
+  }, [simulationEvents, trendData]);
+
   const trajectoryData = useMemo(() => {
     if (!frames.length) return [];
     let x = 0;
@@ -1242,6 +1459,58 @@ export function DrillReplayPage() {
       return ts >= segment.start && ts <= segment.end;
     }) ?? null;
   }, [currentFrame, segmentTimeline]);
+
+  const activeSimulationEvent = useMemo(() => {
+    if (!currentFrame) return null;
+    const ts = dayjs(currentFrame.ts).valueOf();
+    const md = currentFrame.md;
+    return (
+      simulationEvents.find((event) => {
+        const startTs = event.startTs ? dayjs(event.startTs).valueOf() : null;
+        const endTs = event.endTs ? dayjs(event.endTs).valueOf() : null;
+        const inTime =
+          typeof startTs === "number" &&
+          Number.isFinite(startTs) &&
+          typeof endTs === "number" &&
+          Number.isFinite(endTs) &&
+          ts >= startTs &&
+          ts <= endTs;
+        const inDepth =
+          typeof md === "number" &&
+          typeof event.mdStart === "number" &&
+          typeof event.mdEnd === "number" &&
+          md >= event.mdStart &&
+          md <= event.mdEnd;
+        return inTime || inDepth;
+      }) ?? null
+    );
+  }, [currentFrame, simulationEvents]);
+
+  const currentRop = useMemo(() => {
+    if (!frames.length || currentIndex <= 0) return 0;
+    const prev = frames[currentIndex - 1];
+    const curr = frames[currentIndex];
+    if (!prev || !curr || typeof prev.md !== "number" || typeof curr.md !== "number") return 0;
+    const dtHours = Math.max(1 / 3600, dayjs(curr.ts).diff(dayjs(prev.ts), "second") / 3600);
+    return Math.max(0, (curr.md - prev.md) / dtHours);
+  }, [frames, currentIndex]);
+
+  const twinScores = useMemo(
+    () => computeTwinScores(currentFrame, twinProfile, activeSimulationEvent, dataCoverage),
+    [activeSimulationEvent, currentFrame, dataCoverage, twinProfile]
+  );
+
+  const nearbyEvents = useMemo(() => {
+    if (!currentFrame || !simulationEvents.length) return simulationEvents.slice(0, 5);
+    const now = dayjs(currentFrame.ts).valueOf();
+    return [...simulationEvents]
+      .sort((a, b) => {
+        const aStart = a.startTs ? dayjs(a.startTs).valueOf() : now;
+        const bStart = b.startTs ? dayjs(b.startTs).valueOf() : now;
+        return Math.abs(aStart - now) - Math.abs(bStart - now);
+      })
+      .slice(0, 5);
+  }, [currentFrame, simulationEvents]);
 
   const mappedCount = useMemo(
     () => METRIC_KEYS.filter((key) => Boolean(channelMap[key])).length,
@@ -1460,6 +1729,9 @@ export function DrillReplayPage() {
     azimuthLabel: metricLabel(t, "azimuth"),
     inclinationLabel: metricLabel(t, "inclination")
   };
+  const riskStatus = twinScores.risk >= 70 ? "exception" : twinScores.risk >= 42 ? "active" : "success";
+  const riskColor = twinScores.risk >= 70 ? "red" : twinScores.risk >= 42 ? "orange" : "green";
+  const scenarioName = toText(asRecord(selectedWellRun?.details?.mock_data)?.scenario, "live");
 
   if (!tenantReady) {
     return <Alert type="warning" showIcon message={t("data.noTenant")} description={t("data.noTenantDesc")} />;
@@ -1592,6 +1864,15 @@ export function DrillReplayPage() {
             <Tag color="geekblue">
               {t("replay.quality")}: {(dataCoverage * 100).toFixed(1)}%
             </Tag>
+            <Tag color="cyan">
+              {t("replay.scenario")}: {scenarioName}
+            </Tag>
+            <Tag color="volcano">
+              {t("replay.events")}: {simulationEvents.length}
+            </Tag>
+            <Tag color={riskColor}>
+              {t("replay.twinRisk")}: {t(`replay.risk.${riskColor}`)}
+            </Tag>
             {activeSegment ? <Tag color="purple">{t("replay.activeSegment")}: {activeSegment.type}</Tag> : null}
           </Space>
           <Space wrap style={{ marginTop: 10 }}>
@@ -1618,6 +1899,15 @@ export function DrillReplayPage() {
             title={t("replay.scene")}
             extra={
               <Space>
+                <Segmented
+                  size="small"
+                  value={sceneMode}
+                  options={[
+                    { value: "twin3d", label: t("replay.modeTwin3d") },
+                    { value: "schematic", label: t("replay.modeSchematic") }
+                  ]}
+                  onChange={(value) => setSceneMode(value as SceneMode)}
+                />
                 <Button
                   icon={<StepBackwardOutlined />}
                   disabled={!frames.length}
@@ -1663,13 +1953,27 @@ export function DrillReplayPage() {
 
             {frames.length ? (
               <Space direction="vertical" style={{ width: "100%" }} size={14}>
+                {activeSimulationEvent ? (
+                  <Alert
+                    showIcon
+                    type={eventAlertType(activeSimulationEvent.severity)}
+                    message={`${activeSimulationEvent.title} · ${t("replay.confidence")} ${
+                      activeSimulationEvent.confidence ? `${(activeSimulationEvent.confidence * 100).toFixed(0)}%` : "--"
+                    }`}
+                    description={activeSimulationEvent.recommendation || activeSimulationEvent.description}
+                  />
+                ) : (
+                  <Alert showIcon type="info" message={t("replay.nominalTwin")} />
+                )}
                 <DrillScene
+                  mode={sceneMode}
                   frame={currentFrame}
                   depth={currentDepth}
                   depthRange={depthRange}
                   soilLayers={soilLayers}
                   playing={playing}
                   labels={labels}
+                  activeEvent={activeSimulationEvent}
                 />
 
                 <Row gutter={[12, 12]} align="middle">
@@ -1720,6 +2024,38 @@ export function DrillReplayPage() {
           <Card title={t("replay.gauges")}>
             {frames.length && currentFrame ? (
               <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                <Card
+                  size="small"
+                  title={
+                    <Space>
+                      <Badge status={riskStatus === "exception" ? "error" : riskStatus === "active" ? "warning" : "success"} />
+                      {t("replay.twinStatus")}
+                    </Space>
+                  }
+                >
+                  <Space direction="vertical" style={{ width: "100%" }} size={10}>
+                    <Row gutter={10}>
+                      <Col span={8}>
+                        <Statistic title={t("replay.bitHealth")} value={twinScores.bitHealth} precision={0} suffix="%" />
+                      </Col>
+                      <Col span={8}>
+                        <Statistic title={t("replay.hydraulics")} value={twinScores.hydraulics} precision={0} suffix="%" />
+                      </Col>
+                      <Col span={8}>
+                        <Statistic title={t("replay.rop")} value={currentRop} precision={1} suffix="m/h" />
+                      </Col>
+                    </Row>
+                    <Progress percent={Number(twinScores.risk.toFixed(0))} status={riskStatus} strokeColor={riskColor} />
+                    <Descriptions size="small" column={1}>
+                      <Descriptions.Item label={t("replay.rig")}>{twinProfile.rig}</Descriptions.Item>
+                      <Descriptions.Item label={t("replay.bit")}>
+                        {twinProfile.bit.type} · {twinProfile.bit.iadc}
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t("replay.wellProfile")}>{twinProfile.wellProfile}</Descriptions.Item>
+                    </Descriptions>
+                  </Space>
+                </Card>
+
                 <Row gutter={[10, 10]}>
                   {["pressure", "vibration", "wob", "rpm"].map((item) => {
                     const key = item as MetricKey;
@@ -1841,6 +2177,57 @@ export function DrillReplayPage() {
                     })}
                   </Space>
                 </Card>
+
+                <Card size="small" title={t("replay.twinEvents")}>
+                  {nearbyEvents.length ? (
+                    <List
+                      size="small"
+                      dataSource={nearbyEvents}
+                      renderItem={(event) => (
+                        <List.Item
+                          actions={[
+                            <Button
+                              key="jump"
+                              type="link"
+                              size="small"
+                              onClick={() => {
+                                if (!event.startTs) return;
+                                const target = dayjs(event.startTs).valueOf();
+                                const targetIndex = frames.findIndex((frame) => dayjs(frame.ts).valueOf() >= target);
+                                if (targetIndex >= 0) {
+                                  setPlaying(false);
+                                  setPlayhead(targetIndex);
+                                }
+                              }}
+                            >
+                              {t("replay.jump")}
+                            </Button>
+                          ]}
+                        >
+                          <List.Item.Meta
+                            title={
+                              <Space wrap size={6}>
+                                <Tag color={eventColor(event.severity)}>{event.severity}</Tag>
+                                <Typography.Text>{event.title}</Typography.Text>
+                              </Space>
+                            }
+                            description={
+                              <Space direction="vertical" size={2}>
+                                <Typography.Text type="secondary">
+                                  {event.startTs ? formatTs(event.startTs) : "-"} · {event.mdStart?.toFixed(1) ?? "--"}-
+                                  {event.mdEnd?.toFixed(1) ?? "--"} m
+                                </Typography.Text>
+                                <Typography.Text type="secondary">{event.description}</Typography.Text>
+                              </Space>
+                            }
+                          />
+                        </List.Item>
+                      )}
+                    />
+                  ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("replay.noEvents")} />
+                  )}
+                </Card>
               </Space>
             ) : (
               <Empty description={t("replay.noFrames")} />
@@ -1875,6 +2262,23 @@ export function DrillReplayPage() {
                         yAxisId="left"
                         fill={segment.color}
                         fillOpacity={0.1}
+                        strokeOpacity={0}
+                      />
+                    ))}
+                    {trendEvents.map((event) => (
+                      <ReferenceArea
+                        key={event.id}
+                        x1={event.x1}
+                        x2={event.x2}
+                        yAxisId="left"
+                        fill={
+                          event.severity === "critical"
+                            ? "#ff4d4f"
+                            : event.severity === "warning"
+                              ? "#fa8c16"
+                              : "#1677ff"
+                        }
+                        fillOpacity={0.16}
                         strokeOpacity={0}
                       />
                     ))}

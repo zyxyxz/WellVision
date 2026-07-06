@@ -21,7 +21,7 @@ from app.db.session import SessionLocal
 from app.models import DataWarehouse, EventMetric, OpSegment, Tenant, WellRun
 
 
-CHANNELS = [
+CORE_CHANNELS = [
     "standpipe_pressure",
     "bit_vibration",
     "wob",
@@ -31,10 +31,39 @@ CHANNELS = [
     "torque",
 ]
 
+EXTRA_CHANNELS = [
+    "flow_in",
+    "rop",
+    "bit_depth",
+    "hookload",
+    "differential_pressure",
+    "mud_motor_rpm",
+]
+
+CHANNELS = CORE_CHANNELS + EXTRA_CHANNELS
+
 
 @dataclass
 class SegmentPlan:
     segment_type: str
+    start_idx: int
+    end_idx: int
+
+
+@dataclass(frozen=True)
+class ScenarioEvent:
+    event_type: str
+    title: str
+    severity: str
+    start_ratio: float
+    end_ratio: float
+    description: str
+    recommendation: str
+
+
+@dataclass(frozen=True)
+class EventWindow:
+    spec: ScenarioEvent
     start_idx: int
     end_idx: int
 
@@ -125,9 +154,26 @@ def _find_or_create_well_run(
     return existing
 
 
-def _plan_segments(total_points: int) -> list[SegmentPlan]:
+def _plan_segments(total_points: int, scenario: str) -> list[SegmentPlan]:
     if total_points < 10:
         return [SegmentPlan(segment_type="drilling", start_idx=0, end_idx=max(0, total_points - 1))]
+
+    if scenario == "anomaly":
+        cut1 = int(total_points * 0.18)
+        cut2 = int(total_points * 0.23)
+        cut3 = int(total_points * 0.45)
+        cut4 = int(total_points * 0.56)
+        cut5 = int(total_points * 0.72)
+        cut6 = int(total_points * 0.80)
+        return [
+            SegmentPlan("drilling", 0, cut1),
+            SegmentPlan("connection", cut1 + 1, cut2),
+            SegmentPlan("drilling", cut2 + 1, cut3),
+            SegmentPlan("stick_slip_mitigation", cut3 + 1, cut4),
+            SegmentPlan("drilling", cut4 + 1, cut5),
+            SegmentPlan("circulation", cut5 + 1, cut6),
+            SegmentPlan("drilling", cut6 + 1, total_points - 1),
+        ]
 
     cut1 = int(total_points * 0.33)
     cut2 = int(total_points * 0.38)
@@ -149,6 +195,74 @@ def _segment_of_idx(idx: int, plans: list[SegmentPlan]) -> str:
     return plans[-1].segment_type
 
 
+def _scenario_events(scenario: str) -> list[ScenarioEvent]:
+    if scenario == "anomaly":
+        return [
+            ScenarioEvent(
+                event_type="pressure_surge",
+                title="Standpipe pressure surge",
+                severity="warning",
+                start_ratio=0.28,
+                end_ratio=0.33,
+                description="短时压力升高，伴随泵压波动和扭矩抬升。",
+                recommendation="降低 WOB，确认喷嘴与环空返砂情况。",
+            ),
+            ScenarioEvent(
+                event_type="stick_slip",
+                title="Stick-slip oscillation",
+                severity="critical",
+                start_ratio=0.47,
+                end_ratio=0.56,
+                description="RPM 与扭矩呈反相振荡，钻头转动稳定性下降。",
+                recommendation="提高转速窗口，降低钻压并观察振动衰减。",
+            ),
+            ScenarioEvent(
+                event_type="high_vibration",
+                title="High lateral vibration",
+                severity="critical",
+                start_ratio=0.74,
+                end_ratio=0.80,
+                description="横向振动上升，钻头受冲击风险增加。",
+                recommendation="进入稳钻参数，必要时短时循环清洗井底。",
+            ),
+        ]
+
+    return [
+        ScenarioEvent(
+            event_type="parameter_window",
+            title="Stable drilling window",
+            severity="info",
+            start_ratio=0.42,
+            end_ratio=0.52,
+            description="WOB、RPM、泵压均处于推荐窗口，机械钻速稳定。",
+            recommendation="维持当前参数，继续监控振动与扭矩趋势。",
+        )
+    ]
+
+
+def _build_event_windows(total_points: int, scenario: str) -> list[EventWindow]:
+    windows: list[EventWindow] = []
+    last_idx = max(0, total_points - 1)
+    for spec in _scenario_events(scenario):
+        start_idx = max(0, min(last_idx, int(total_points * spec.start_ratio)))
+        end_idx = max(start_idx, min(last_idx, int(total_points * spec.end_ratio)))
+        windows.append(EventWindow(spec=spec, start_idx=start_idx, end_idx=end_idx))
+    return windows
+
+
+def _event_at_idx(idx: int, windows: list[EventWindow]) -> EventWindow | None:
+    for window in windows:
+        if window.start_idx <= idx <= window.end_idx:
+            return window
+    return None
+
+
+def _event_intensity(idx: int, window: EventWindow) -> float:
+    span = max(1, window.end_idx - window.start_idx)
+    phase = (idx - window.start_idx) / span
+    return max(0.0, math.sin(math.pi * phase))
+
+
 def _drilling_signals(i: int, md: float, md0: float, noise: random.Random) -> dict[str, float]:
     pressure = 3300.0 + 380.0 * math.sin(i / 26.0) + 0.6 * (md - md0) + noise.gauss(0, 45.0)
     wob = 88.0 + 14.0 * math.sin(i / 18.0) + noise.gauss(0, 3.2)
@@ -162,6 +276,16 @@ def _drilling_signals(i: int, md: float, md0: float, noise: random.Random) -> di
         "rpm": max(0.0, rpm),
         "torque": max(0.1, torque),
     }
+
+
+def _mitigation_signals(i: int, md: float, md0: float, noise: random.Random) -> dict[str, float]:
+    base = _drilling_signals(i, md, md0, noise)
+    base["standpipe_pressure"] *= 0.92
+    base["wob"] *= 0.72
+    base["rpm"] *= 1.14
+    base["torque"] *= 0.82
+    base["bit_vibration"] *= 0.76
+    return base
 
 
 def _connection_signals(i: int, noise: random.Random) -> dict[str, float]:
@@ -194,6 +318,51 @@ def _circulation_signals(i: int, noise: random.Random) -> dict[str, float]:
     }
 
 
+def _apply_event_to_signals(signals: dict[str, float], idx: int, window: EventWindow | None) -> dict[str, float]:
+    if window is None:
+        return signals
+
+    intensity = _event_intensity(idx, window)
+    event_type = window.spec.event_type
+    adjusted = dict(signals)
+
+    if event_type == "pressure_surge":
+        adjusted["standpipe_pressure"] += 850.0 * intensity
+        adjusted["torque"] *= 1.0 + 0.16 * intensity
+        adjusted["bit_vibration"] *= 1.0 + 0.25 * intensity
+    elif event_type == "stick_slip":
+        wave = math.sin(idx * 0.8)
+        adjusted["rpm"] = max(0.0, adjusted["rpm"] * (1.0 - 0.55 * intensity) + 34.0 * intensity * abs(wave))
+        adjusted["torque"] *= 1.0 + 0.9 * intensity * (0.45 + abs(wave))
+        adjusted["bit_vibration"] *= 1.0 + 1.35 * intensity
+        adjusted["wob"] *= 1.0 + 0.22 * intensity
+    elif event_type == "high_vibration":
+        adjusted["bit_vibration"] += 7.5 * intensity
+        adjusted["torque"] *= 1.0 + 0.24 * intensity
+        adjusted["rpm"] *= 1.0 - 0.12 * intensity
+
+    return adjusted
+
+
+def _formation_layers(base_md: float) -> list[dict[str, float | str]]:
+    return [
+        {"name": "Soft Clay", "top": base_md, "bottom": base_md + 72.0, "color": "#c89a6d"},
+        {"name": "Fine Sandstone", "top": base_md + 72.0, "bottom": base_md + 168.0, "color": "#b17e4f"},
+        {"name": "Reactive Shale", "top": base_md + 168.0, "bottom": base_md + 260.0, "color": "#87705a"},
+        {"name": "Interbedded Limestone", "top": base_md + 260.0, "bottom": base_md + 390.0, "color": "#c4b49a"},
+        {"name": "Tight Sand", "top": base_md + 390.0, "bottom": base_md + 540.0, "color": "#9f7a53"},
+    ]
+
+
+def _formation_name(md: float, layers: list[dict[str, float | str]]) -> str:
+    for layer in layers:
+        top = float(layer["top"])
+        bottom = float(layer["bottom"])
+        if top <= md <= bottom:
+            return str(layer["name"])
+    return str(layers[-1]["name"])
+
+
 def generate_mock_data(
     *,
     tenant_id_text: str | None,
@@ -202,6 +371,7 @@ def generate_mock_data(
     duration_minutes: int,
     step_seconds: int,
     seed: int,
+    scenario: str,
     replace: bool,
 ) -> dict[str, str | int]:
     duration_minutes = max(10, duration_minutes)
@@ -211,10 +381,13 @@ def generate_mock_data(
     start_ts = datetime.now(timezone.utc) - timedelta(seconds=total_seconds)
     end_ts = start_ts + timedelta(seconds=(total_points - 1) * step_seconds)
 
-    plans = _plan_segments(total_points)
+    scenario = scenario if scenario in {"normal", "anomaly"} else "normal"
+    plans = _plan_segments(total_points, scenario)
+    event_windows = _build_event_windows(total_points, scenario)
     rng = random.Random(seed)
     base_md = 1500.0
     current_md = base_md
+    formations = _formation_layers(base_md)
     ts_series: list[datetime] = []
     md_series: list[float] = []
 
@@ -238,6 +411,8 @@ def generate_mock_data(
 
             if seg == "drilling":
                 md_rate_mps = 0.046 + 0.006 * math.sin(idx / 60.0) + rng.gauss(0, 0.0018)
+            elif seg == "stick_slip_mitigation":
+                md_rate_mps = 0.030 + 0.004 * math.sin(idx / 45.0) + rng.gauss(0, 0.0012)
             elif seg == "circulation":
                 md_rate_mps = 0.002 + rng.gauss(0, 0.0004)
             else:
@@ -246,15 +421,27 @@ def generate_mock_data(
 
             if seg == "drilling":
                 signals = _drilling_signals(idx, current_md, base_md, rng)
+            elif seg == "stick_slip_mitigation":
+                signals = _mitigation_signals(idx, current_md, base_md, rng)
             elif seg == "circulation":
                 signals = _circulation_signals(idx, rng)
             else:
                 signals = _connection_signals(idx, rng)
 
+            active_event = _event_at_idx(idx, event_windows)
+            signals = _apply_event_to_signals(signals, idx, active_event)
+
             inclination = 6.0 + 0.016 * (current_md - base_md) + 0.45 * math.sin(idx / 170.0) + rng.gauss(0, 0.08)
             azimuth = (35.0 + 0.028 * (current_md - base_md) + 2.2 * math.sin(idx / 95.0) + rng.gauss(0, 0.4)) % 360.0
             signals["inclination"] = max(0.0, min(88.0, inclination))
             signals["azimuth"] = azimuth
+            signals["flow_in"] = 535.0 if seg in {"drilling", "stick_slip_mitigation"} else 430.0 if seg == "circulation" else 24.0
+            signals["flow_in"] += rng.gauss(0, 8.0)
+            signals["rop"] = max(0.0, md_rate_mps * 3600.0)
+            signals["bit_depth"] = current_md - (0.2 if seg == "connection" else 0.0)
+            signals["hookload"] = max(20.0, 172.0 - signals["wob"] * 0.42 + rng.gauss(0, 2.5))
+            signals["differential_pressure"] = max(0.0, signals["standpipe_pressure"] - 930.0 + rng.gauss(0, 18.0))
+            signals["mud_motor_rpm"] = max(0.0, signals["rpm"] * 0.72 + signals["flow_in"] * 0.055 + rng.gauss(0, 1.8))
 
             ts_series.append(ts)
             md_series.append(current_md)
@@ -272,25 +459,71 @@ def generate_mock_data(
                         "channel": channel,
                         "source": "surface",
                         "md": current_md,
-                        "quality_code": 0,
+                        "quality_code": 1 if active_event and active_event.spec.severity == "critical" else 0,
                         "value": float(signals[channel]),
                     }
                 )
 
+        simulation_events = []
+        for window in event_windows:
+            simulation_events.append(
+                {
+                    "id": f"{scenario}-{window.spec.event_type}-{window.start_idx}",
+                    "type": window.spec.event_type,
+                    "title": window.spec.title,
+                    "severity": window.spec.severity,
+                    "start_ts": ts_series[window.start_idx].isoformat(),
+                    "end_ts": ts_series[window.end_idx].isoformat(),
+                    "md_start": float(md_series[window.start_idx]),
+                    "md_end": float(md_series[window.end_idx]),
+                    "description": window.spec.description,
+                    "recommendation": window.spec.recommendation,
+                    "confidence": 0.94 if window.spec.severity == "critical" else 0.88,
+                }
+            )
+
         run.details = {
             "mock_data": {
                 "seed": seed,
+                "scenario": scenario,
                 "duration_minutes": duration_minutes,
                 "step_seconds": step_seconds,
+                "channels": CHANNELS,
+            },
+            "digital_twin": {
+                "rig": "WV-260 AC automated drilling package",
+                "well_profile": "build-and-hold directional section",
+                "bit": {
+                    "type": "PDC 12-1/4in",
+                    "iadc": "M323",
+                    "nozzles": "6 x 12/32",
+                    "serial": f"WV-{scenario.upper()}-{seed}",
+                },
+                "bha": {
+                    "motor": "7in 1.5deg mud motor",
+                    "mwd": "near-bit vibration + inclination package",
+                    "stabilizers": 3,
+                },
+                "mud": {
+                    "density_ppg": 10.6,
+                    "viscosity_cp": 38,
+                    "chloride_ppm": 5200,
+                },
+                "operating_window": {
+                    "wob_min": 62,
+                    "wob_max": 105,
+                    "rpm_min": 92,
+                    "rpm_max": 148,
+                    "pressure_min": 2600,
+                    "pressure_max": 4300,
+                    "vibration_max": 7.2,
+                    "torque_max": 32,
+                },
             },
             "geology": {
-                "layers": [
-                    {"name": "Soft Clay", "top": 1500.0, "bottom": 1585.0, "color": "#c89a6d"},
-                    {"name": "Sandstone", "top": 1585.0, "bottom": 1710.0, "color": "#b17e4f"},
-                    {"name": "Shale", "top": 1710.0, "bottom": 1820.0, "color": "#87705a"},
-                    {"name": "Limestone", "top": 1820.0, "bottom": 1940.0, "color": "#c4b49a"},
-                ]
+                "layers": formations
             },
+            "simulation_events": simulation_events,
         }
 
         for plan in plans:
@@ -310,7 +543,16 @@ def generate_mock_data(
                     end_ts=ts_series[end_idx],
                     md_start=float(md_series[start_idx]),
                     md_end=float(md_series[end_idx]),
-                    details={"generator": "generate_replay_mock_data.py"},
+                    details={
+                        "generator": "generate_replay_mock_data.py",
+                        "scenario": scenario,
+                        "formation": _formation_name(float(md_series[start_idx]), formations),
+                        "target": {
+                            "wob": "62-105 kN",
+                            "rpm": "92-148 rpm",
+                            "pressure": "2600-4300 psi",
+                        },
+                    },
                 )
             )
 
@@ -323,9 +565,11 @@ def generate_mock_data(
             "tenant_id": str(tenant.id),
             "warehouse_id": str(warehouse.id),
             "well_run_id": str(run.id),
+            "scenario": scenario,
             "points": total_points,
             "metrics_inserted": len(metric_rows),
             "segments_inserted": len(plans),
+            "events_inserted": len(simulation_events),
         }
 
 
@@ -334,6 +578,12 @@ def main() -> None:
     parser.add_argument("--tenant-id", type=str, default=None, help="Target tenant UUID. Defaults to oldest tenant.")
     parser.add_argument("--warehouse-name", type=str, default="Replay Demo Warehouse", help="Warehouse name.")
     parser.add_argument("--well-run-name", type=str, default="Replay Demo Run", help="Well run name.")
+    parser.add_argument(
+        "--scenario",
+        choices=["normal", "anomaly", "all"],
+        default="normal",
+        help="Synthetic scenario to generate. 'all' creates normal and anomaly runs.",
+    )
     parser.add_argument("--duration-minutes", type=int, default=120, help="Replay duration in minutes.")
     parser.add_argument("--step-seconds", type=int, default=2, help="Sampling step in seconds.")
     parser.add_argument("--seed", type=int, default=20260219, help="Random seed for deterministic data.")
@@ -344,16 +594,25 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    result = generate_mock_data(
-        tenant_id_text=args.tenant_id,
-        warehouse_name=args.warehouse_name.strip() or "Replay Demo Warehouse",
-        well_run_name=args.well_run_name.strip() or "Replay Demo Run",
-        duration_minutes=args.duration_minutes,
-        step_seconds=args.step_seconds,
-        seed=args.seed,
-        replace=not args.append,
-    )
-    print(result)
+    scenarios = ["normal", "anomaly"] if args.scenario == "all" else [args.scenario]
+    results = []
+    for offset, scenario in enumerate(scenarios):
+        suffix = "Normal Twin" if scenario == "normal" else "Anomaly Twin"
+        run_name = args.well_run_name.strip() or "Replay Demo Run"
+        if args.scenario == "all":
+            run_name = f"{run_name} - {suffix}"
+        result = generate_mock_data(
+            tenant_id_text=args.tenant_id,
+            warehouse_name=args.warehouse_name.strip() or "Replay Demo Warehouse",
+            well_run_name=run_name,
+            duration_minutes=args.duration_minutes,
+            step_seconds=args.step_seconds,
+            seed=args.seed + offset,
+            scenario=scenario,
+            replace=not args.append,
+        )
+        results.append(result)
+    print(results if len(results) > 1 else results[0])
 
 
 if __name__ == "__main__":
