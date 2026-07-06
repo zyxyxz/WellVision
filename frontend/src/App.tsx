@@ -46,14 +46,14 @@ const DrillReplayPage = React.lazy(async () => {
   return { default: mod.DrillReplayPage };
 });
 
-const PlaceholderPage = React.lazy(async () => {
-  const mod = await import("./pages/PlaceholderPage");
-  return { default: mod.PlaceholderPage };
-});
-
 const ReportsPage = React.lazy(async () => {
   const mod = await import("./pages/ReportsPage");
   return { default: mod.ReportsPage };
+});
+
+const ReviewPage = React.lazy(async () => {
+  const mod = await import("./pages/ReviewPage");
+  return { default: mod.ReviewPage };
 });
 
 const AdminPage = React.lazy(async () => {
@@ -97,7 +97,7 @@ export default function App() {
         <Route path="/replay" element={<LazyRoute><DrillReplayPage /></LazyRoute>} />
         <Route path="/curves" element={<Navigate to="/analysis" replace />} />
         <Route path="/reports" element={<LazyRoute><ReportsPage /></LazyRoute>} />
-        <Route path="/review" element={<LazyRoute><PlaceholderPage title="Review" /></LazyRoute>} />
+        <Route path="/review" element={<LazyRoute><ReviewPage /></LazyRoute>} />
         <Route path="/admin" element={<LazyRoute><AdminPage /></LazyRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

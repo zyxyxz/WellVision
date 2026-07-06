@@ -13,8 +13,8 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const demoEmail = import.meta.env.VITE_DEMO_EMAIL || "admin@wellvision.io";
-  const demoPassword = import.meta.env.VITE_DEMO_PASSWORD || "ChangeMe123!";
+  const demoEmail = import.meta.env.VITE_DEMO_EMAIL ?? (import.meta.env.DEV ? "admin@wellvision.io" : "");
+  const demoPassword = import.meta.env.VITE_DEMO_PASSWORD ?? (import.meta.env.DEV ? "ChangeMe123!" : "");
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/";
 

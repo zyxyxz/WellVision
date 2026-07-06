@@ -20,6 +20,9 @@ from app.services.event_metrics import (
 )
 from app.services.storage import build_s3_client, stream_object
 
+_start_lock = threading.Lock()
+_started = False
+
 
 def _parse_timestamp(value: str | None) -> datetime | None:
     if value is None:
@@ -342,9 +345,14 @@ def _worker_loop() -> None:
 
 
 def start_import_worker() -> None:
+    global _started
     settings = get_settings()
     if not settings.import_worker_enabled:
         return
+    with _start_lock:
+        if _started:
+            return
+        _started = True
     worker_count = max(1, min(settings.import_worker_concurrency, 16))
     for idx in range(worker_count):
         name = f"import-worker-{idx + 1}"

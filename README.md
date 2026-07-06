@@ -240,6 +240,23 @@ CELERY_BROKER_URL=${REDIS_URL}
 CELERY_RESULT_BACKEND=${REDIS_URL}
 ```
 
+## ✅ 本地验证
+
+提交前建议运行统一验证脚本：
+
+```bash
+bash scripts/verify.sh
+```
+
+该脚本会执行：
+
+* 后端 Python 语法编译
+* 后端标准库 `unittest` 回归测试
+* 前端 TypeScript 类型检查
+* 前端生产构建
+
+生产部署前还应阅读 [production-readiness.md](docs/production-readiness.md)，重点确认 `SECRET_KEY`、`BOOTSTRAP_ADMIN_PASSWORD`、对象存储 CORS、导入 worker 运行方式和数据库 schema 演进策略。
+
 可选技术增强（非常建议尽早考虑）：
 
 * 数据湖表格式：Iceberg 或 Delta Lake（便于治理与回溯）

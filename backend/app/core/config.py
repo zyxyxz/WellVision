@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -133,6 +133,12 @@ class Settings(BaseSettings):
         if value < 5:
             raise ValueError("MULTIPART_PART_SIZE_MB must be >= 5 for S3-compatible multipart upload.")
         return value
+
+    @model_validator(mode="after")
+    def validate_production_defaults(self) -> "Settings":
+        if self.env.lower() == "production" and self.bootstrap_admin_password == "ChangeMe123!":
+            raise ValueError("BOOTSTRAP_ADMIN_PASSWORD must be changed in production.")
+        return self
 
 
 @lru_cache(maxsize=1)

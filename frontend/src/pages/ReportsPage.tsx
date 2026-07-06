@@ -25,6 +25,7 @@ import {
   type ReportStatus,
   updateReport
 } from "../api/reports";
+import { getApiErrorMessage } from "../api/errors";
 import { useAuth } from "../auth/AuthProvider";
 
 type ReportFormValues = {
@@ -112,8 +113,8 @@ export function ReportsPage() {
       }
       setModalOpen(false);
       await load(statusFilter);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail || t("reports.saveFail"));
+    } catch (err) {
+      message.error(getApiErrorMessage(err, t("reports.saveFail")));
     } finally {
       setSaving(false);
     }
@@ -124,8 +125,8 @@ export function ReportsPage() {
       await submitReport(report.id);
       message.success(t("reports.submitted"));
       await load(statusFilter);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail || t("reports.submitFail"));
+    } catch (err) {
+      message.error(getApiErrorMessage(err, t("reports.submitFail")));
     }
   };
 
@@ -134,8 +135,8 @@ export function ReportsPage() {
       await approveReport(report.id);
       message.success(t("reports.approved"));
       await load(statusFilter);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail || t("reports.approveFail"));
+    } catch (err) {
+      message.error(getApiErrorMessage(err, t("reports.approveFail")));
     }
   };
 
@@ -157,8 +158,8 @@ export function ReportsPage() {
           await rejectReport(report.id, comment || undefined);
           message.success(t("reports.rejected"));
           await load(statusFilter);
-        } catch (err: any) {
-          message.error(err?.response?.data?.detail || t("reports.rejectFail"));
+        } catch (err) {
+          message.error(getApiErrorMessage(err, t("reports.rejectFail")));
         }
       }
     });
